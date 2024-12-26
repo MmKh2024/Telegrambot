@@ -8,13 +8,13 @@ import time
 # --- Load bot token from environment variables ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("Please set the BOT_TOKEN environment variable in Railway.")
+    raise ValueError("Please set the BOT_TOKEN environment variable.")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- Paths for saving data ---
-USER_DATA_FILE = "user_data.json"
-MESSAGE_DATA_FILE = "message_data.json"
+USER_DATA_FILE = "/tmp/user_data.json"  # تغییر مسیر ذخیره فایل به /tmp
+MESSAGE_DATA_FILE = "/tmp/message_data.json"  # تغییر مسیر ذخیره فایل به /tmp
 CHANNELS = ["@khclick", "@khclick_addlist", "@dastyarchannelnews"]
 
 # --- Load or initialize data ---
@@ -27,10 +27,9 @@ def load_data(file_name):
 
 def save_data(file_name, data):
     with open(file_name, "w") as file:
-        json.dump(data, file)
+        json.dump(data, file, ensure_ascii=False, indent=4)
 
 user_data = load_data(USER_DATA_FILE)
-message_data = load_data(MESSAGE_DATA_FILE)
 
 # --- Utility functions ---
 def check_joined_channels(user_id):
@@ -54,8 +53,7 @@ def start_handler(message: Message):
         user_data[user_id] = {
             "coins": 0,
             "invited_by": None,
-            "daily_check": 0,
-            "last_active": time.time(),
+            "daily_check": "",
             "joined": False,
         }
         save_data(USER_DATA_FILE, user_data)
@@ -100,7 +98,6 @@ def help_handler(message: Message):
         message.chat.id,
         "راهنمای دستورات:\n"
         "/profile - مشاهده پروفایل و میزان سکه‌ها\n"
-        "/create_button - ساخت دکمه شیشه‌ای\n"
         "/invite - دعوت دوستان و دریافت سکه\n"
         "/check_daily - دریافت سکه روزانه\n"
         "/subscriptions - خرید اشتراک\n"
@@ -117,19 +114,8 @@ def profile_handler(message: Message):
         message.chat.id,
         f"پروفایل شما:\n"
         f"سکه‌ها: {coins}\n"
-        f"دعوت‌ها: {invites}\n"
-        f"سطح: {get_user_level(invites)}",
+        f"دعوت‌ها: {invites}",
     )
-
-def get_user_level(invites):
-    if invites < 5:
-        return "مبتدی"
-    elif invites < 10:
-        return "متوسط"
-    elif invites < 20:
-        return "حرفه‌ای"
-    else:
-        return "استاد"
 
 @bot.message_handler(commands=["invite"])
 def invite_handler(message: Message):
@@ -144,21 +130,18 @@ def invite_handler(message: Message):
 def check_daily_handler(message: Message):
     user_id = str(message.from_user.id)
     user = user_data.get(user_id, {})
-    last_check = user.get("daily_check", 0)
     today = time.strftime("%Y-%m-%d")
-    if last_check == today:
+    if user.get("daily_check") == today:
         bot.send_message(message.chat.id, "شما قبلاً امروز سکه دریافت کرده‌اید!")
         return
-    day_count = user.get("day_count", 0) + 1
-    coins = min(day_count + 1, 7)
+    coins = 10
     user["coins"] += coins
     user["daily_check"] = today
-    user["day_count"] = day_count if day_count < 7 else 1
     save_data(USER_DATA_FILE, user_data)
     bot.send_message(
         message.chat.id,
         f"شما {coins} سکه برای امروز دریافت کردید!\n"
-        f"فردا دوباره به ربات سر بزنید.",
+        "فردا دوباره به ربات سر بزنید.",
     )
 
 @bot.message_handler(commands=["subscriptions"])
@@ -172,8 +155,15 @@ def subscriptions_handler(message: Message):
         "برای خرید، کد اشتراک را ارسال کنید (مثلاً: 1 یا 2 یا 3).",
     )
 
+# --- Fallback handler for unknown messages ---
+@bot.message_handler(func=lambda message: True)
+def fallback_handler(message: Message):
+    bot.send_message(
+        message.chat.id,
+        "متوجه دستور شما نشدم! لطفاً از /help استفاده کنید.",
+    )
+
 # --- Start the bot ---
 if __name__ == "__main__":
     save_data(USER_DATA_FILE, user_data)
-    save_data(MESSAGE_DATA_FILE, message_data)
-    bot.infinity_polling()
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
